@@ -1,18 +1,23 @@
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, PutCommand, ScanCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, PutCommand, ScanCommand, QueryCommand, DeleteCommand } from "@aws-sdk/lib-dynamodb";
 
 const client = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(client);
 
-const ITEMS_TABLE = "ServerlessCrudTable"; // Aapki items table
-const ORDERS_TABLE = "CloudStoreOrdersTable"; // Nayi orders table (Partition Key: userId, Sort Key: orderId)
+const ITEMS_TABLE = "ItemsTable";
+const ORDERS_TABLE = "CloudStoreOrdersTable";
 
 export const handler = async (event) => {
     const method = event.requestContext.http.method;
     const path = event.requestContext.http.path;
 
-    // Cognito Token se User ID (sub) extract karna
-    const userId = event.requestContext.authorizer?.jwt?.claims?.sub || "guest";
+    // Cognito Token se User ID (sub) aur Groups extract karna
+    const claims = event.requestContext.authorizer?.jwt?.claims || {};
+    const userId = claims.sub || "guest";
+    
+    const rawGroups = claims['cognito:groups'] || [];
+    const userGroups = Array.isArray(rawGroups) ? rawGroups : [rawGroups];
+    const isAdmin = userGroups.includes('Admins');
 
     try {
         // --- 1. ITEMS CRUD ---
@@ -21,7 +26,12 @@ export const handler = async (event) => {
                 const res = await docClient.send(new ScanCommand({ TableName: ITEMS_TABLE }));
                 return { statusCode: 200, body: JSON.stringify(res.Items || []) };
             }
-            if (method === "POST") {
+            
+            // Non-GET requests (POST/PUT/DELETE) sirf Admin ke liye allowed hain
+            if (method === "POST" || method === "PUT") {
+                if (!isAdmin) {
+                    return { statusCode: 403, body: JSON.stringify({ message: "Access Denied: Admins only!" }) };
+                }
                 const body = JSON.parse(event.body);
                 await docClient.send(new PutCommand({ TableName: ITEMS_TABLE, Item: body }));
                 return { statusCode: 200, body: JSON.stringify({ message: "Item saved successfully" }) };
@@ -30,7 +40,6 @@ export const handler = async (event) => {
 
         // --- 2. ORDER HISTORY & PROFILE ENDPOINTS ---
         if (path === "/orders") {
-            // User ke specific orders fetch karna
             if (method === "GET") {
                 if (userId === "guest") {
                     return { statusCode: 401, body: JSON.stringify({ message: "Unauthorized" }) };
@@ -43,7 +52,6 @@ export const handler = async (event) => {
                 return { statusCode: 200, body: JSON.stringify(res.Items || []) };
             }
 
-            // Naya Order Save karna
             if (method === "POST") {
                 if (userId === "guest") {
                     return { statusCode: 401, body: JSON.stringify({ message: "Must be logged in to place order" }) };
