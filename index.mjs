@@ -11,7 +11,6 @@ export const handler = async (event) => {
     const method = event.requestContext.http.method;
     const path = event.requestContext.http.path;
 
-    // Cognito Token se User ID (sub) aur Groups extract karna
     const claims = event.requestContext.authorizer?.jwt?.claims || {};
     const userId = claims.sub || "guest";
     
@@ -27,7 +26,7 @@ export const handler = async (event) => {
                 return { statusCode: 200, body: JSON.stringify(res.Items || []) };
             }
             
-            // Non-GET requests (POST/PUT/DELETE) sirf Admin ke liye allowed hain
+            // Admin-only actions (POST, PUT, DELETE)
             if (method === "POST" || method === "PUT") {
                 if (!isAdmin) {
                     return { statusCode: 403, body: JSON.stringify({ message: "Access Denied: Admins only!" }) };
@@ -35,6 +34,19 @@ export const handler = async (event) => {
                 const body = JSON.parse(event.body);
                 await docClient.send(new PutCommand({ TableName: ITEMS_TABLE, Item: body }));
                 return { statusCode: 200, body: JSON.stringify({ message: "Item saved successfully" }) };
+            }
+
+            if (method === "DELETE") {
+                if (!isAdmin) {
+                    return { statusCode: 403, body: JSON.stringify({ message: "Access Denied: Admins only!" }) };
+                }
+                const body = JSON.parse(event.body || "{}");
+                const itemId = body.id;
+                if (!itemId) {
+                    return { statusCode: 400, body: JSON.stringify({ message: "Item ID is required for deletion" }) };
+                }
+                await docClient.send(new DeleteCommand({ TableName: ITEMS_TABLE, Key: { id: itemId } }));
+                return { statusCode: 200, body: JSON.stringify({ message: "Item deleted successfully" }) };
             }
         }
 
