@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>RK-Cloud-Security - E-Commerce Hub</title>
+    <title>RK-Cloud-Security - Store & Admin Portal</title>
     <style>
         :root { --primary: #2563eb; --bg: #f8fafc; --card-bg: #ffffff; --text: #1e293b; }
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; background: var(--bg); color: var(--text); }
@@ -12,18 +12,21 @@
         .hidden { display: none !important; }
         
         .dashboard-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 25px; }
-        .products-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 20px; margin-top: 15px; }
+        .products-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 20px; margin-top: 15px; }
         
-        .product-card { background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 15px; display: flex; flex-direction: column; justify-content: space-between; transition: transform 0.2s; }
-        .product-card:hover { transform: translateY(-3px); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
-        .product-img { width: 100%; height: 160px; object-fit: cover; border-radius: 8px; background: #f1f5f9; }
+        .product-card { background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 15px; display: flex; flex-direction: column; justify-content: space-between; }
+        .product-img { width: 100%; height: 150px; object-fit: cover; border-radius: 8px; background: #f1f5f9; }
         
-        input, select, button { padding: 8px 12px; margin: 6px 0; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 14px; }
+        input, select, button { padding: 9px 12px; margin: 6px 0; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 14px; }
         input, select { width: 100%; box-sizing: border-box; }
         button { background: var(--primary); color: white; border: none; cursor: pointer; font-weight: 600; transition: background 0.2s; }
         button:hover { background: #1d4ed8; }
         button.danger { background: #dc2626; }
         button.secondary { background: #64748b; }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e2e8f0; font-size: 14px; }
+        th { background: #f1f5f9; color: #475569; }
 
         .filters { display: flex; gap: 15px; margin-bottom: 20px; }
         .cart-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #f1f5f9; }
@@ -33,8 +36,8 @@
 <body>
 
     <header>
-        <h2>🛍️ RK-Cloud-Security Store</h2>
-        <div id="authHeaderView" style="display: flex; align-items: center; gap: 10px;">
+        <h2>🛍️ RK-Cloud-Security Hub</h2>
+        <div style="display: flex; align-items: center; gap: 12px;">
             <button id="ordersTabBtn" onclick="toggleOrdersView()" class="secondary hidden">📦 My Orders</button>
             <span id="userStatusText" style="font-size: 14px; font-weight: 500;"></span>
             <button id="authBtn" onclick="loginWithCognito()">Login / Sign Up</button>
@@ -54,32 +57,59 @@
             </div>
         </div>
 
-        <!-- Admin Add Item Section (Hidden for normal users) -->
-        <div class="card hidden" id="adminCard">
-            <h3>➕ Add New Store Product (Admin Portal)</h3>
-            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px;">
-                <input type="text" id="itemId" placeholder="Product ID (e.g., prod_101)">
-                <input type="text" id="itemName" placeholder="Product Title">
-                <input type="number" id="itemPrice" placeholder="Price (₹)">
+        <!-- ================= ADMIN CONSOLE VIEW ================= -->
+        <div id="adminPortal" class="hidden">
+            <div class="card">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <h3>👑 Admin Console: Product Management</h3>
+                    <button onclick="fetchItems()" class="secondary" style="padding: 6px 12px; font-size: 12px;">🔄 Refresh Catalog</button>
+                </div>
+                
+                <div style="background: #f8fafc; padding: 15px; border-radius: 8px; margin-top: 15px; border: 1px solid #e2e8f0;">
+                    <h4 style="margin-top: 0;">➕ Add New Product</h4>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px;">
+                        <input type="text" id="adminProdId" placeholder="Product ID (e.g., prod_101)">
+                        <input type="text" id="adminProdName" placeholder="Product Title">
+                        <input type="number" id="adminProdPrice" placeholder="Price (₹)">
+                    </div>
+                    <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 15px; margin-top: 10px;">
+                        <input type="text" id="adminProdImage" placeholder="Image URL / GIF Link">
+                        <select id="adminProdCategory">
+                            <option value="Electronics">Electronics</option>
+                            <option value="Fashion">Fashion</option>
+                            <option value="Home">Home & Living</option>
+                        </select>
+                    </div>
+                    <button onclick="saveItem()" style="margin-top: 12px; width: 100%; background: #16a34a;">Publish Product to Store</button>
+                </div>
+
+                <h4 style="margin-top: 25px;">Existing Catalog Inventory</h4>
+                <div style="overflow-x: auto;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Title</th>
+                                <th>Category</th>
+                                <th>Price</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="adminTableBody">
+                            <tr><td colspan="5" style="text-align: center; color: #64748b;">Loading products...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
-            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 15px; margin-top: 10px;">
-                <input type="text" id="itemImage" placeholder="Image URL / GIF Link">
-                <select id="itemCategory">
-                    <option value="Electronics">Electronics</option>
-                    <option value="Fashion">Fashion</option>
-                    <option value="Home">Home & Living</option>
-                </select>
-            </div>
-            <button onclick="saveItem()" style="margin-top: 15px; width: 100%;">Publish Product</button>
         </div>
 
-        <!-- Main Store & Cart Grid -->
-        <div class="dashboard-grid">
+        <!-- ================= CUSTOMER STOREFRONT VIEW ================= -->
+        <div id="customerPortal" class="dashboard-grid">
             
             <div class="card">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                     <h3>Available Products</h3>
-                    <button onclick="fetchItems()" style="padding: 6px 12px; font-size: 12px;">🔄 Refresh Catalog</button>
+                    <button onclick="fetchItems()" class="secondary" style="padding: 6px 12px; font-size: 12px;">🔄 Refresh Catalog</button>
                 </div>
                 
                 <div class="filters">
@@ -140,7 +170,8 @@
         function checkAuthAndRole() {
             const token = localStorage.getItem('jwt_token');
             const authBtn = document.getElementById('authBtn');
-            const adminCard = document.getElementById('adminCard');
+            const adminPortal = document.getElementById('adminPortal');
+            const customerPortal = document.getElementById('customerPortal');
             const userStatusText = document.getElementById('userStatusText');
             const ordersTabBtn = document.getElementById('ordersTabBtn');
 
@@ -149,9 +180,7 @@
                 authBtn.setAttribute("onclick", "logout()");
                 authBtn.className = "danger";
                 ordersTabBtn.classList.remove('hidden');
-                userStatusText.innerText = "Logged In ✅";
 
-                // Decode JWT to check Admin Group
                 try {
                     const base64Url = token.split('.')[1];
                     const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
@@ -160,20 +189,27 @@
                     const groups = payload['cognito:groups'] || [];
 
                     if (groups.includes('Admins')) {
-                        adminCard.classList.remove('hidden');
-                        userStatusText.innerText = "Admin Hub 👑";
+                        // Admin View: Show Admin Console, Hide Customer Storefront & Cart
+                        adminPortal.classList.remove('hidden');
+                        customerPortal.classList.add('hidden');
+                        userStatusText.innerText = "Admin Console 👑";
                     } else {
-                        adminCard.classList.add('hidden');
+                        // Customer View
+                        adminPortal.classList.add('hidden');
+                        customerPortal.classList.remove('hidden');
+                        userStatusText.innerText = "Customer Account ✅";
                     }
                 } catch (e) {
                     console.error("Token decode error", e);
-                    adminCard.classList.add('hidden');
+                    adminPortal.classList.add('hidden');
+                    customerPortal.classList.remove('hidden');
                 }
             } else {
                 authBtn.innerText = "Login / Sign Up";
                 authBtn.setAttribute("onclick", "loginWithCognito()");
                 authBtn.className = "";
-                adminCard.classList.add('hidden');
+                adminPortal.classList.add('hidden');
+                customerPortal.classList.remove('hidden');
                 ordersTabBtn.classList.add('hidden');
                 userStatusText.innerText = "";
             }
@@ -196,6 +232,7 @@
                 const data = await res.json();
                 allProducts = Array.isArray(data) ? data : [];
                 displayProducts(allProducts);
+                displayAdminTable(allProducts);
             } catch (err) {
                 console.error("Error fetching products:", err);
             }
@@ -227,6 +264,29 @@
                             <button onclick='addToCart("${item.id}", "${title.replace(/'/g, "")}", ${price})' style="width: 100%; padding: 8px; font-size: 13px;">Add to Cart</button>
                         </div>
                     </div>
+                `;
+            });
+        }
+
+        function displayAdminTable(products) {
+            const tbody = document.getElementById('adminTableBody');
+            tbody.innerHTML = '';
+            if (products.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #64748b;">No products found in inventory.</td></tr>';
+                return;
+            }
+
+            products.forEach(item => {
+                tbody.innerHTML += `
+                    <tr>
+                        <td><b>${item.id}</b></td>
+                        <td>${item.name}</td>
+                        <td>${item.category || 'General'}</td>
+                        <td>₹${item.price}</td>
+                        <td>
+                            <button onclick='deleteItem("${item.id}")' class="danger" style="padding: 4px 10px; font-size: 12px;">Delete</button>
+                        </td>
+                    </tr>
                 `;
             });
         }
@@ -371,13 +431,13 @@
             const token = localStorage.getItem('jwt_token');
             if (!token) { alert("Please login first!"); return; }
 
-            const id = document.getElementById('itemId').value;
-            const name = document.getElementById('itemName').value;
-            const price = document.getElementById('itemPrice').value;
-            const image = document.getElementById('itemImage').value;
-            const category = document.getElementById('itemCategory').value;
+            const id = document.getElementById('adminProdId').value;
+            const name = document.getElementById('adminProdName').value;
+            const price = document.getElementById('adminProdPrice').value;
+            const image = document.getElementById('adminProdImage').value;
+            const category = document.getElementById('adminProdCategory').value;
 
-            if (!id || !name || !price) { alert("Please fill ID, Name, Price!"); return; }
+            if (!id || !name || !price) { alert("Please fill ID, Title, and Price!"); return; }
 
             const res = await fetch(`${API_URL}/items`, {
                 method: 'POST',
@@ -392,13 +452,38 @@
 
             if (res.ok) {
                 alert("Product published successfully!");
-                document.getElementById('itemId').value = '';
-                document.getElementById('itemName').value = '';
-                document.getElementById('itemPrice').value = '';
-                document.getElementById('itemImage').value = '';
+                document.getElementById('adminProdId').value = '';
+                document.getElementById('adminProdName').value = '';
+                document.getElementById('adminProdPrice').value = '';
+                document.getElementById('adminProdImage').value = '';
                 fetchItems();
             } else {
                 alert("Failed to publish product.");
+            }
+        }
+
+        async function deleteItem(id) {
+            const token = localStorage.getItem('jwt_token');
+            if (!token) { alert("Please login first!"); return; }
+
+            if (!confirm(`Are you sure you want to delete product ID: ${id}?`)) return;
+
+            const res = await fetch(`${API_URL}/items`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ id })
+            });
+
+            if (res.status === 403) {
+                alert("Access Denied: Only Admins can delete products!");
+                return;
+            }
+
+            if (res.ok) {
+                alert("Product deleted successfully!");
+                fetchItems();
+            } else {
+                alert("Failed to delete product.");
             }
         }
     </script>
