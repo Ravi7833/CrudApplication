@@ -14,8 +14,13 @@ export const handler = async (event) => {
     const claims = event.requestContext.authorizer?.jwt?.claims || {};
     const userId = claims.sub || "guest";
     
-    const rawGroups = claims['cognito:groups'] || [];
-    const userGroups = Array.isArray(rawGroups) ? rawGroups : [rawGroups];
+    // Robust group extraction from JWT claims
+    let userGroups = [];
+    const rawGroups = claims['cognito:groups'] || claims['groups'];
+    if (rawGroups) {
+        userGroups = Array.isArray(rawGroups) ? rawGroups : [rawGroups];
+    }
+    
     const isAdmin = userGroups.includes('Admins');
 
     try {
@@ -29,7 +34,7 @@ export const handler = async (event) => {
             // Admin-only actions (POST, PUT, DELETE)
             if (method === "POST" || method === "PUT") {
                 if (!isAdmin) {
-                    return { statusCode: 403, body: JSON.stringify({ message: "Access Denied: Admins only!" }) };
+                    return { statusCode: 403, body: JSON.stringify({ message: "Access Denied: Admins only!", userGroups }) };
                 }
                 const body = JSON.parse(event.body);
                 await docClient.send(new PutCommand({ TableName: ITEMS_TABLE, Item: body }));
