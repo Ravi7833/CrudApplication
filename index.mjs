@@ -1,491 +1,91 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>RK-Cloud-Security - Store & Admin Portal</title>
-    <style>
-        :root { --primary: #2563eb; --bg: #f8fafc; --card-bg: #ffffff; --text: #1e293b; }
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; background: var(--bg); color: var(--text); }
-        header { background: #1e293b; color: white; padding: 20px 40px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .container { max-width: 1200px; margin: 30px auto; padding: 0 20px; }
-        .card { background: var(--card-bg); padding: 25px; margin-bottom: 25px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
-        .hidden { display: none !important; }
-        
-        .dashboard-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 25px; }
-        .products-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 20px; margin-top: 15px; }
-        
-        .product-card { background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 15px; display: flex; flex-direction: column; justify-content: space-between; }
-        .product-img { width: 100%; height: 150px; object-fit: cover; border-radius: 8px; background: #f1f5f9; }
-        
-        input, select, button { padding: 9px 12px; margin: 6px 0; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 14px; }
-        input, select { width: 100%; box-sizing: border-box; }
-        button { background: var(--primary); color: white; border: none; cursor: pointer; font-weight: 600; transition: background 0.2s; }
-        button:hover { background: #1d4ed8; }
-        button.danger { background: #dc2626; }
-        button.secondary { background: #64748b; }
+import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import { DynamoDBDocumentClient, PutCommand, ScanCommand, QueryCommand, DeleteCommand } from "@aws-sdk/lib-dynamodb";
 
-        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e2e8f0; font-size: 14px; }
-        th { background: #f1f5f9; color: #475569; }
+const client = new DynamoDBClient({});
+const docClient = DynamoDBDocumentClient.from(client);
 
-        .filters { display: flex; gap: 15px; margin-bottom: 20px; }
-        .cart-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #f1f5f9; }
-        .order-card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-bottom: 12px; background: #f8fafc; }
-    </style>
-</head>
-<body>
+const ITEMS_TABLE = "ItemsTable";
+const ORDERS_TABLE = "CloudStoreOrdersTable"; // Fixed spacing typo here
 
-    <header>
-        <h2>🛍️ RK-Cloud-Security Hub</h2>
-        <div style="display: flex; align-items: center; gap: 12px;">
-            <button id="ordersTabBtn" onclick="toggleOrdersView()" class="secondary hidden">📦 My Orders</button>
-            <span id="userStatusText" style="font-size: 14px; font-weight: 500;"></span>
-            <button id="authBtn" onclick="loginWithCognito()">Login / Sign Up</button>
-        </div>
-    </header>
+export const handler = async (event) => {
+    const method = event.requestContext.http.method;
+    const path = event.requestContext.http.path;
 
-    <div class="container">
-        
-        <!-- Order History View -->
-        <div class="card hidden" id="ordersSection">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <h3>📦 My Past Orders</h3>
-                <button onclick="toggleOrdersView()" class="secondary">Close Orders</button>
-            </div>
-            <div id="ordersList" style="margin-top: 15px;">
-                <p style="color: #64748b;">Loading order history...</p>
-            </div>
-        </div>
+    const claims = event.requestContext.authorizer?.jwt?.claims || {};
+    const userId = claims.sub || "guest";
+    const userEmail = claims.email || ""; // Cognito JWT se email extract karna
+    
+    // Aapki Admin Admin Email ID
+    const ADMIN_EMAIL = "rk00828431@gmail.com"; 
+    const isAdmin = (userEmail === ADMIN_EMAIL);
 
-        <!-- ================= ADMIN CONSOLE VIEW ================= -->
-        <div id="adminPortal" class="hidden">
-            <div class="card">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <h3>👑 Admin Console: Product Management</h3>
-                    <button onclick="fetchItems()" class="secondary" style="padding: 6px 12px; font-size: 12px;">🔄 Refresh Catalog</button>
-                </div>
-                
-                <div style="background: #f8fafc; padding: 15px; border-radius: 8px; margin-top: 15px; border: 1px solid #e2e8f0;">
-                    <h4 style="margin-top: 0;">➕ Add New Product</h4>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px;">
-                        <input type="text" id="adminProdId" placeholder="Product ID (e.g., prod_101)">
-                        <input type="text" id="adminProdName" placeholder="Product Title">
-                        <input type="number" id="adminProdPrice" placeholder="Price (₹)">
-                    </div>
-                    <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 15px; margin-top: 10px;">
-                        <input type="text" id="adminProdImage" placeholder="Image URL / GIF Link">
-                        <select id="adminProdCategory">
-                            <option value="Electronics">Electronics</option>
-                            <option value="Fashion">Fashion</option>
-                            <option value="Home">Home & Living</option>
-                        </select>
-                    </div>
-                    <button onclick="saveItem()" style="margin-top: 12px; width: 100%; background: #16a34a;">Publish Product to Store</button>
-                </div>
-
-                <h4 style="margin-top: 25px;">Existing Catalog Inventory</h4>
-                <div style="overflow-x: auto;">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>ID</th>
-                                <th>Title</th>
-                                <th>Category</th>
-                                <th>Price</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="adminTableBody">
-                            <tr><td colspan="5" style="text-align: center; color: #64748b;">Loading products...</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
-        <!-- ================= CUSTOMER STOREFRONT VIEW ================= -->
-        <div id="customerPortal" class="dashboard-grid">
+    try {
+        // --- 1. ITEMS CRUD ---
+        if (path === "/items") {
+            if (method === "GET") {
+                const res = await docClient.send(new ScanCommand({ TableName: ITEMS_TABLE }));
+                return { statusCode: 200, body: JSON.stringify(res.Items || []) };
+            }
             
-            <div class="card">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <h3>Available Products</h3>
-                    <button onclick="fetchItems()" class="secondary" style="padding: 6px 12px; font-size: 12px;">🔄 Refresh Catalog</button>
-                </div>
-                
-                <div class="filters">
-                    <input type="text" id="searchInput" placeholder="Search products..." oninput="filterProducts()">
-                    <select id="categoryFilter" onchange="filterProducts()">
-                        <option value="ALL">All Categories</option>
-                        <option value="Electronics">Electronics</option>
-                        <option value="Fashion">Fashion</option>
-                        <option value="Home">Home & Living</option>
-                    </select>
-                </div>
-
-                <div id="itemList" class="products-grid">
-                    <p style="grid-column: 1/-1; text-align: center; color: #64748b;">Loading store inventory...</p>
-                </div>
-            </div>
-
-            <!-- Cart Sidebar -->
-            <div class="card">
-                <h3>🛒 Shopping Cart</h3>
-                <div id="cartItemsList" style="min-height: 150px; max-height: 300px; overflow-y: auto;">
-                    <p style="color: #64748b; font-size: 14px; text-align: center; margin-top: 40px;">Your cart is empty.</p>
-                </div>
-                <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 15px 0;">
-                <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 16px;">
-                    <span>Total:</span>
-                    <span id="cartTotal">₹0</span>
-                </div>
-                <button onclick="checkout()" style="width: 100%; margin-top: 15px; background: #16a34a;">Proceed to Checkout</button>
-            </div>
-
-        </div>
-    </div>
-
-    <script>
-        const API_URL = "https://ztkupwydde.execute-api.ap-south-1.amazonaws.com";
-        const COGNITO_DOMAIN = "ap-south-1jicuuvxct.auth.ap-south-1.amazoncognito.com";
-        const CLIENT_ID = "4iq9tj463o6d8r3g6ceraoqktv";
-        const REDIRECT_URI = "https://dkqji71grg3kj.cloudfront.net";
-
-        let allProducts = [];
-        let cart = [];
-
-        window.onload = function() {
-            const hash = window.location.hash;
-            if (hash && hash.includes('access_token=')) {
-                const accessToken = hash.split('&').find(item => item.startsWith('#access_token='))?.split('=')[1] || 
-                                        hash.split('&').find(item => item.startsWith('access_token='))?.split('=')[1];
-                if (accessToken) {
-                    localStorage.setItem('jwt_token', accessToken);
-                    window.history.pushState("", document.title, window.location.pathname);
+            // Admin-only actions (POST, PUT, DELETE)
+            if (method === "POST" || method === "PUT") {
+                if (!isAdmin) {
+                    return { statusCode: 403, body: JSON.stringify({ message: "Access Denied: Admins only!", userEmail }) };
                 }
+                const body = JSON.parse(event.body);
+                await docClient.send(new PutCommand({ TableName: ITEMS_TABLE, Item: body }));
+                return { statusCode: 200, body: JSON.stringify({ message: "Item saved successfully" }) };
             }
-            checkAuthAndRole();
-            fetchItems();
-        };
 
-        function checkAuthAndRole() {
-            const token = localStorage.getItem('jwt_token');
-            const authBtn = document.getElementById('authBtn');
-            const adminPortal = document.getElementById('adminPortal');
-            const customerPortal = document.getElementById('customerPortal');
-            const userStatusText = document.getElementById('userStatusText');
-            const ordersTabBtn = document.getElementById('ordersTabBtn');
-
-            if (token && token !== "null" && token !== "undefined") {
-                authBtn.innerText = "Logout";
-                authBtn.setAttribute("onclick", "logout()");
-                authBtn.className = "danger";
-                ordersTabBtn.classList.remove('hidden');
-
-                try {
-                    const base64Url = token.split('.')[1];
-                    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-                    const jsonPayload = decodeURIComponent(atob(base64).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
-                    const payload = JSON.parse(jsonPayload);
-                    const groups = payload['cognito:groups'] || [];
-
-                    if (groups.includes('Admins')) {
-                        // Admin View: Show Admin Console, Hide Customer Storefront & Cart
-                        adminPortal.classList.remove('hidden');
-                        customerPortal.classList.add('hidden');
-                        userStatusText.innerText = "Admin Console 👑";
-                    } else {
-                        // Customer View
-                        adminPortal.classList.add('hidden');
-                        customerPortal.classList.remove('hidden');
-                        userStatusText.innerText = "Customer Account ✅";
-                    }
-                } catch (e) {
-                    console.error("Token decode error", e);
-                    adminPortal.classList.add('hidden');
-                    customerPortal.classList.remove('hidden');
+            if (method === "DELETE") {
+                if (!isAdmin) {
+                    return { statusCode: 403, body: JSON.stringify({ message: "Access Denied: Admins only!" }) };
                 }
-            } else {
-                authBtn.innerText = "Login / Sign Up";
-                authBtn.setAttribute("onclick", "loginWithCognito()");
-                authBtn.className = "";
-                adminPortal.classList.add('hidden');
-                customerPortal.classList.remove('hidden');
-                ordersTabBtn.classList.add('hidden');
-                userStatusText.innerText = "";
-            }
-        }
-
-        function loginWithCognito() {
-            const loginUrl = `https://${COGNITO_DOMAIN}/login?client_id=${CLIENT_ID}&response_type=token&scope=email+openid+profile&redirect_uri=${encodeURIComponent(REDIRECT_URI)}`;
-            window.location.href = loginUrl;
-        }
-
-        function logout() {
-            localStorage.removeItem('jwt_token');
-            checkAuthAndRole();
-            window.location.href = REDIRECT_URI;
-        }
-
-        async function fetchItems() {
-            try {
-                const res = await fetch(`${API_URL}/items`);
-                const data = await res.json();
-                allProducts = Array.isArray(data) ? data : [];
-                displayProducts(allProducts);
-                displayAdminTable(allProducts);
-            } catch (err) {
-                console.error("Error fetching products:", err);
-            }
-        }
-
-        function displayProducts(products) {
-            const list = document.getElementById('itemList');
-            list.innerHTML = '';
-            if (products.length === 0) {
-                list.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: #64748b;">No products available.</p>';
-                return;
-            }
-
-            products.forEach(item => {
-                let imgSrc = item.image || "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=400";
-                let price = item.price || 999;
-                let category = item.category || "General";
-                let title = item.name || "Product";
-
-                list.innerHTML += `
-                    <div class="product-card">
-                        <div>
-                            <img src="${imgSrc}" class="product-img" alt="${title}" onerror="this.src='https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=400'">
-                            <span style="font-size: 11px; background: #e2e8f0; padding: 2px 6px; border-radius: 4px; font-weight: bold; color: #475569; display: inline-block; margin-top: 8px;">${category}</span>
-                            <h4 style="margin: 8px 0 4px 0; font-size: 15px;">${title}</h4>
-                            <p style="color: #16a34a; font-weight: bold; margin: 0;">₹${price}</p>
-                        </div>
-                        <div style="margin-top: 12px;">
-                            <button onclick='addToCart("${item.id}", "${title.replace(/'/g, "")}", ${price})' style="width: 100%; padding: 8px; font-size: 13px;">Add to Cart</button>
-                        </div>
-                    </div>
-                `;
-            });
-        }
-
-        function displayAdminTable(products) {
-            const tbody = document.getElementById('adminTableBody');
-            tbody.innerHTML = '';
-            if (products.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #64748b;">No products found in inventory.</td></tr>';
-                return;
-            }
-
-            products.forEach(item => {
-                tbody.innerHTML += `
-                    <tr>
-                        <td><b>${item.id}</b></td>
-                        <td>${item.name}</td>
-                        <td>${item.category || 'General'}</td>
-                        <td>₹${item.price}</td>
-                        <td>
-                            <button onclick='deleteItem("${item.id}")' class="danger" style="padding: 4px 10px; font-size: 12px;">Delete</button>
-                        </td>
-                    </tr>
-                `;
-            });
-        }
-
-        function filterProducts() {
-            const search = document.getElementById('searchInput').value.toLowerCase();
-            const category = document.getElementById('categoryFilter').value;
-
-            const filtered = allProducts.filter(item => {
-                const matchesSearch = (item.name || "").toLowerCase().includes(search);
-                const matchesCategory = (category === "ALL" || item.category === category);
-                return matchesSearch && matchesCategory;
-            });
-            displayProducts(filtered);
-        }
-
-        function addToCart(id, name, price) {
-            const existing = cart.find(p => p.id === id);
-            if (existing) { existing.qty += 1; } 
-            else { cart.push({ id, name, price, qty: 1 }); }
-            updateCartUI();
-        }
-
-        function updateCartUI() {
-            const cartList = document.getElementById('cartItemsList');
-            const cartTotal = document.getElementById('cartTotal');
-            cartList.innerHTML = '';
-
-            if (cart.length === 0) {
-                cartList.innerHTML = '<p style="color: #64748b; font-size: 14px; text-align: center; margin-top: 40px;">Your cart is empty.</p>';
-                cartTotal.innerText = '₹0';
-                return;
-            }
-
-            let total = 0;
-            cart.forEach((item, index) => {
-                total += item.price * item.qty;
-                cartList.innerHTML += `
-                    <div class="cart-item">
-                        <div>
-                            <span style="font-size: 14px; font-weight: 500;">${item.name}</span><br>
-                            <span style="font-size: 12px; color: #64748b;">₹${item.price} × ${item.qty}</span>
-                        </div>
-                        <button onclick="removeFromCart(${index})" class="danger" style="padding: 2px 8px; font-size: 11px;">✕</button>
-                    </div>
-                `;
-            });
-            cartTotal.innerText = `₹${total}`;
-        }
-
-        function removeFromCart(index) {
-            cart.splice(index, 1);
-            updateCartUI();
-        }
-
-        async function checkout() {
-            const token = localStorage.getItem('jwt_token');
-            if (!token) {
-                alert("Please login first to place an order!");
-                loginWithCognito();
-                return;
-            }
-
-            if (cart.length === 0) {
-                alert("Your cart is empty!");
-                return;
-            }
-
-            const totalAmount = cart.reduce((acc, item) => acc + (item.price * item.qty), 0);
-
-            try {
-                const res = await fetch(`${API_URL}/orders`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`
-                    },
-                    body: JSON.stringify({ items: cart, totalAmount })
-                });
-
-                if (res.ok) {
-                    alert("🎉 Order placed successfully!");
-                    cart = [];
-                    updateCartUI();
-                    fetchOrders();
-                } else {
-                    alert("Failed to place order.");
+                const body = JSON.parse(event.body || "{}");
+                const itemId = body.id;
+                if (!itemId) {
+                    return { statusCode: 400, body: JSON.stringify({ message: "Item ID is required for deletion" }) };
                 }
-            } catch (err) {
-                console.error("Checkout error:", err);
-                alert("Error connecting to server.");
+                await docClient.send(new DeleteCommand({ TableName: ITEMS_TABLE, Key: { id: itemId } }));
+                return { statusCode: 200, body: JSON.stringify({ message: "Item deleted successfully" }) };
             }
         }
 
-        async function fetchOrders() {
-            const token = localStorage.getItem('jwt_token');
-            if (!token) return;
-
-            try {
-                const res = await fetch(`${API_URL}/orders`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                const orders = await res.json();
-                const ordersList = document.getElementById('ordersList');
-                ordersList.innerHTML = '';
-
-                if (!Array.isArray(orders) || orders.length === 0) {
-                    ordersList.innerHTML = '<p style="color: #64748b;">No past orders found.</p>';
-                    return;
+        // --- 2. ORDER HISTORY & PROFILE ENDPOINTS ---
+        if (path === "/orders") {
+            if (method === "GET") {
+                if (userId === "guest") {
+                    return { statusCode: 401, body: JSON.stringify({ message: "Unauthorized" }) };
                 }
+                const res = await docClient.send(new QueryCommand({
+                    TableName: ORDERS_TABLE,
+                    KeyConditionExpression: "userId = :uid",
+                    ExpressionAttributeValues: { ":uid": userId }
+                }));
+                return { statusCode: 200, body: JSON.stringify(res.Items || []) };
+            }
 
-                orders.forEach(order => {
-                    let itemsDetail = order.items.map(i => `${i.name} (x${i.qty})`).join(', ');
-                    let dateStr = new Date(order.orderDate).toLocaleDateString() + " " + new Date(order.orderDate).toLocaleTimeString();
-                    
-                    ordersList.innerHTML += `
-                        <div class="order-card">
-                            <div style="display: flex; justify-content: space-between; font-weight: bold;">
-                                <span>Order ID: ${order.orderId}</span>
-                                <span style="color: #16a34a;">Status: ${order.status}</span>
-                            </div>
-                            <p style="font-size: 13px; color: #64748b; margin: 4px 0;">Date: ${dateStr}</p>
-                            <p style="font-size: 14px; margin: 8px 0;"><b>Items:</b> ${itemsDetail}</p>
-                            <p style="font-size: 15px; font-weight: bold; color: #2563eb; margin: 0;">Total Paid: ₹${order.totalAmount}</p>
-                        </div>
-                    `;
-                });
-            } catch (err) {
-                console.error("Error fetching orders:", err);
+            if (method === "POST") {
+                if (userId === "guest") {
+                    return { statusCode: 401, body: JSON.stringify({ message: "Must be logged in to place order" }) };
+                }
+                const body = JSON.parse(event.body);
+                const orderItem = {
+                    userId: userId,
+                    orderId: `ORD-${Date.now()}`,
+                    items: body.items,
+                    totalAmount: body.totalAmount,
+                    orderDate: new Date().toISOString(),
+                    status: "CONFIRMED"
+                };
+                await docClient.send(new PutCommand({ TableName: ORDERS_TABLE, Item: orderItem }));
+                return { statusCode: 200, body: JSON.stringify({ message: "Order placed successfully!", order: orderItem }) };
             }
         }
 
-        function toggleOrdersView() {
-            const ordersSec = document.getElementById('ordersSection');
-            ordersSec.classList.toggle('hidden');
-            if (!ordersSec.classList.contains('hidden')) {
-                fetchOrders();
-            }
-        }
-
-        async function saveItem() {
-            const token = localStorage.getItem('jwt_token');
-            if (!token) { alert("Please login first!"); return; }
-
-            const id = document.getElementById('adminProdId').value;
-            const name = document.getElementById('adminProdName').value;
-            const price = document.getElementById('adminProdPrice').value;
-            const image = document.getElementById('adminProdImage').value;
-            const category = document.getElementById('adminProdCategory').value;
-
-            if (!id || !name || !price) { alert("Please fill ID, Title, and Price!"); return; }
-
-            const res = await fetch(`${API_URL}/items`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ id, name, price: Number(price), image, category })
-            });
-
-            if (res.status === 403) {
-                alert("Access Denied: Only Admins can add products!");
-                return;
-            }
-
-            if (res.ok) {
-                alert("Product published successfully!");
-                document.getElementById('adminProdId').value = '';
-                document.getElementById('adminProdName').value = '';
-                document.getElementById('adminProdPrice').value = '';
-                document.getElementById('adminProdImage').value = '';
-                fetchItems();
-            } else {
-                alert("Failed to publish product.");
-            }
-        }
-
-        async function deleteItem(id) {
-            const token = localStorage.getItem('jwt_token');
-            if (!token) { alert("Please login first!"); return; }
-
-            if (!confirm(`Are you sure you want to delete product ID: ${id}?`)) return;
-
-            const res = await fetch(`${API_URL}/items`, {
-                method: 'DELETE',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ id })
-            });
-
-            if (res.status === 403) {
-                alert("Access Denied: Only Admins can delete products!");
-                return;
-            }
-
-            if (res.ok) {
-                alert("Product deleted successfully!");
-                fetchItems();
-            } else {
-                alert("Failed to delete product.");
-            }
-        }
-    </script>
-</body>
-</html>
+        return { statusCode: 404, body: JSON.stringify({ message: "Not Found" }) };
+    } catch (err) {
+        console.error(err);
+        return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
+    }
+};
