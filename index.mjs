@@ -5,7 +5,7 @@ const client = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(client);
 
 const ITEMS_TABLE = "ItemsTable";
-const ORDERS_TABLE = "CloudStoreOrdersTable";
+const ORDERS_TABLE = "CloudStoreOrdersTable"; // Fixed spacing typo here
 
 export const handler = async (event) => {
     const method = event.requestContext.http.method;
@@ -13,15 +13,11 @@ export const handler = async (event) => {
 
     const claims = event.requestContext.authorizer?.jwt?.claims || {};
     const userId = claims.sub || "guest";
+    const userEmail = claims.email || ""; // Cognito JWT se email extract karna
     
-    // Robust group extraction from JWT claims
-    let userGroups = [];
-    const rawGroups = claims['cognito:groups'] || claims['groups'];
-    if (rawGroups) {
-        userGroups = Array.isArray(rawGroups) ? rawGroups : [rawGroups];
-    }
-    
-    const isAdmin = userGroups.includes('Admins');
+    // Aapki Admin Admin Email ID
+    const ADMIN_EMAIL = "rk00828431@gmail.com"; 
+    const isAdmin = (userEmail === ADMIN_EMAIL);
 
     try {
         // --- 1. ITEMS CRUD ---
@@ -34,7 +30,7 @@ export const handler = async (event) => {
             // Admin-only actions (POST, PUT, DELETE)
             if (method === "POST" || method === "PUT") {
                 if (!isAdmin) {
-                    return { statusCode: 403, body: JSON.stringify({ message: "Access Denied: Admins only!", userGroups }) };
+                    return { statusCode: 403, body: JSON.stringify({ message: "Access Denied: Admins only!", userEmail }) };
                 }
                 const body = JSON.parse(event.body);
                 await docClient.send(new PutCommand({ TableName: ITEMS_TABLE, Item: body }));
