@@ -188,13 +188,12 @@
                     const payload = JSON.parse(jsonPayload);
                     const userEmail = payload.email || "";
 
-                    // Admin verification via email or groups
                     const isAdmin = (userEmail === "rk00828431@gmail.com") || (payload['cognito:groups'] && payload['cognito:groups'].includes('Admins'));
 
                     if (isAdmin) {
                         adminPortal.classList.remove('hidden');
                         customerPortal.classList.add('hidden');
-                        userStatusText.innerText = "Admin Console 👑 (" + userEmail + ")";
+                        userStatusText.innerText = "Admin Console 👑";
                     } else {
                         adminPortal.classList.add('hidden');
                         customerPortal.classList.remove('hidden');
