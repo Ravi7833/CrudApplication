@@ -155,11 +155,11 @@
 
         window.onload = function() {
             const hash = window.location.hash;
-            if (hash && hash.includes('access_token=')) {
-                const accessToken = hash.split('&').find(item => item.startsWith('#access_token='))?.split('=')[1] || 
-                                        hash.split('&').find(item => item.startsWith('access_token='))?.split('=')[1];
-                if (accessToken) {
-                    localStorage.setItem('jwt_token', accessToken);
+            if (hash && hash.includes('id_token=')) {
+                const idToken = hash.split('&').find(item => item.startsWith('#id_token='))?.split('=')[1] || 
+                                        hash.split('&').find(item => item.startsWith('id_token='))?.split('=')[1];
+                if (idToken) {
+                    localStorage.setItem('jwt_token', idToken);
                     window.history.pushState("", document.title, window.location.pathname);
                 }
             }
@@ -174,12 +174,6 @@
             const customerPortal = document.getElementById('customerPortal');
             const userStatusText = document.getElementById('userStatusText');
             const ordersTabBtn = document.getElementById('ordersTabBtn');
-            const userEmail = payload.email || "";
-            if (groups.includes('Admins') || userEmail === "rk00828431@gmail.com") {
-                adminPortal.classList.remove('hidden');
-                customerPortal.classList.add('hidden');
-                userStatusText.innerText = "Admin Console 👑";
-}
 
             if (token && token !== "null" && token !== "undefined") {
                 authBtn.innerText = "Logout";
@@ -192,15 +186,16 @@
                     const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
                     const jsonPayload = decodeURIComponent(atob(base64).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
                     const payload = JSON.parse(jsonPayload);
-                    const groups = payload['cognito:groups'] || [];
+                    const userEmail = payload.email || "";
 
-                    if (groups.includes('Admins')) {
-                        // Admin View: Show Admin Console, Hide Customer Storefront & Cart
+                    // Admin verification via email or groups
+                    const isAdmin = (userEmail === "rk00828431@gmail.com") || (payload['cognito:groups'] && payload['cognito:groups'].includes('Admins'));
+
+                    if (isAdmin) {
                         adminPortal.classList.remove('hidden');
                         customerPortal.classList.add('hidden');
-                        userStatusText.innerText = "Admin Console 👑";
+                        userStatusText.innerText = "Admin Console 👑 (" + userEmail + ")";
                     } else {
-                        // Customer View
                         adminPortal.classList.add('hidden');
                         customerPortal.classList.remove('hidden');
                         userStatusText.innerText = "Customer Account ✅";
@@ -222,7 +217,7 @@
         }
 
         function loginWithCognito() {
-            const loginUrl = `https://${COGNITO_DOMAIN}/login?client_id=${CLIENT_ID}&response_type=token&scope=email+openid+profile&redirect_uri=${encodeURIComponent(REDIRECT_URI)}`;
+            const loginUrl = `https://${COGNITO_DOMAIN}/login?client_id=${CLIENT_ID}&response_type=id_token&scope=email+openid+profile&redirect_uri=${encodeURIComponent(REDIRECT_URI)}`;
             window.location.href = loginUrl;
         }
 
