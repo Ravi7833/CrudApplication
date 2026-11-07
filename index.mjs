@@ -5,7 +5,7 @@ const client = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(client);
 
 const ITEMS_TABLE = "ItemsTable";
-const ORDERS_TABLE = "CloudStoreOrdersTable"; // Fixed spacing typo here
+const ORDERS_TABLE = "CloudStoreOrdersTable";
 
 export const handler = async (event) => {
     const method = event.requestContext.http.method;
@@ -13,24 +13,25 @@ export const handler = async (event) => {
 
     const claims = event.requestContext.authorizer?.jwt?.claims || {};
     const userId = claims.sub || "guest";
-    const userEmail = claims.email || ""; // Cognito JWT se email extract karna
     
-    // Aapki Admin Admin Email ID
-    const ADMIN_EMAIL = "rk00828431@gmail.com"; 
-    const isAdmin = (userEmail === ADMIN_EMAIL);
+    // Extract Cognito groups from Access Token claims
+    let userGroups = [];
+    const rawGroups = claims['cognito:groups'] || claims['groups'];
+    if (rawGroups) {
+        userGroups = Array.isArray(rawGroups) ? rawGroups : [rawGroups];
+    }
+    const isAdmin = userGroups.includes('Admins');
 
     try {
-        // --- 1. ITEMS CRUD ---
         if (path === "/items") {
             if (method === "GET") {
                 const res = await docClient.send(new ScanCommand({ TableName: ITEMS_TABLE }));
                 return { statusCode: 200, body: JSON.stringify(res.Items || []) };
             }
             
-            // Admin-only actions (POST, PUT, DELETE)
             if (method === "POST" || method === "PUT") {
                 if (!isAdmin) {
-                    return { statusCode: 403, body: JSON.stringify({ message: "Access Denied: Admins only!", userEmail }) };
+                    return { statusCode: 403, body: JSON.stringify({ message: "Access Denied: Admins only!" }) };
                 }
                 const body = JSON.parse(event.body);
                 await docClient.send(new PutCommand({ TableName: ITEMS_TABLE, Item: body }));
@@ -51,7 +52,6 @@ export const handler = async (event) => {
             }
         }
 
-        // --- 2. ORDER HISTORY & PROFILE ENDPOINTS ---
         if (path === "/orders") {
             if (method === "GET") {
                 if (userId === "guest") {
