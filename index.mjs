@@ -14,13 +14,12 @@ export const handler = async (event) => {
     const claims = event.requestContext.authorizer?.jwt?.claims || {};
     const userId = claims.sub || "guest";
     
-    // Extract Cognito groups from Access Token claims
-    let userGroups = [];
-    const rawGroups = claims['cognito:groups'] || claims['groups'];
-    if (rawGroups) {
-        userGroups = Array.isArray(rawGroups) ? rawGroups : [rawGroups];
-    }
-    const isAdmin = userGroups.includes('Admins');
+    // Fallback: Token claims ya Custom Header se email check karna
+    const headers = event.headers || {};
+    const userEmail = claims.email || headers['x-user-email'] || ""; 
+    
+    const ADMIN_EMAIL = "rk00828431@gmail.com"; 
+    const isAdmin = (userEmail === ADMIN_EMAIL);
 
     try {
         if (path === "/items") {
@@ -31,7 +30,7 @@ export const handler = async (event) => {
             
             if (method === "POST" || method === "PUT") {
                 if (!isAdmin) {
-                    return { statusCode: 403, body: JSON.stringify({ message: "Access Denied: Admins only!" }) };
+                    return { statusCode: 403, body: JSON.stringify({ message: "Access Denied: Admins only!", receivedEmail: userEmail }) };
                 }
                 const body = JSON.parse(event.body);
                 await docClient.send(new PutCommand({ TableName: ITEMS_TABLE, Item: body }));
