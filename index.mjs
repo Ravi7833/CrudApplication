@@ -21,8 +21,23 @@ export const handler = async (event) => {
         return { statusCode: 200, headers, body: "" };
     }
 
-    const claims = event.requestContext.authorizer?.jwt?.claims || {};
-    const userId = claims.sub || "guest";
+    // Extract and decode Token directly inside Lambda from Authorization header
+    const authHeader = event.headers?.authorization || event.headers?.Authorization || "";
+    let userId = "guest";
+
+    if (authHeader.startsWith("Bearer ")) {
+        try {
+            const token = authHeader.split(" ")[1];
+            const base64Url = token.split('.')[1];
+            const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+            const jsonPayload = decodeURIComponent(atob(base64).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+            const payload = JSON.parse(jsonPayload);
+            userId = payload.sub || "guest";
+        } catch (e) {
+            console.error("Token decode error:", e);
+        }
+    }
+
     const ADMIN_SUB = "81739d4a-4001-70f0-1907-d763fb1d24e5"; 
     const isAdmin = (userId === ADMIN_SUB);
 
@@ -42,7 +57,7 @@ export const handler = async (event) => {
             
             if (method === "POST" || method === "PUT") {
                 if (!isAdmin) {
-                    return { statusCode: 403, headers, body: JSON.stringify({ message: "Access Denied: Admins only!" }) };
+                    return { statusCode: 403, headers, body: JSON.stringify({ message: "Access Denied: Admins only!", userId }) };
                 }
                 const body = JSON.parse(event.body);
                 await docClient.send(new PutCommand({ TableName: ITEMS_TABLE, Item: body }));
