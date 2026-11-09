@@ -3,6 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <title>RK-Cloud-Security - Store & Admin Portal</title>
+    <!-- Razorpay Checkout Script -->
+    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
     <style>
         :root { --primary: #2563eb; --bg: #f8fafc; --card-bg: #ffffff; --text: #1e293b; }
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; background: var(--bg); color: var(--text); }
@@ -232,7 +234,6 @@
             try {
                 const res = await fetch(`${API_URL}/items`);
                 const data = await res.json();
-                console.log("Fetched items:", data);
                 allProducts = Array.isArray(data) ? data : [];
                 displayProducts(allProducts);
                 displayAdminTable(allProducts);
@@ -346,6 +347,7 @@
             updateCartUI();
         }
 
+        // Razorpay Checkout Integration
         async function checkout() {
             const token = localStorage.getItem('jwt_token');
             if (!token) {
@@ -361,28 +363,53 @@
 
             const totalAmount = cart.reduce((acc, item) => acc + (item.price * item.qty), 0);
 
-            try {
-                const res = await fetch(`${API_URL}/orders`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`
-                    },
-                    body: JSON.stringify({ items: cart, totalAmount })
-                });
+            const options = {
+                "key": "rzp_test_TxukmKVk1L5Kor", // ⚠️ Yahan apni Razorpay Test Key ID dalein
+                "amount": totalAmount * 100, // Amount in paise
+                "currency": "INR",
+                "name": "RK-Cloud-Security Hub",
+                "description": "E-Commerce Test Order",
+                "image": "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=100",
+                "handler": async function (response) {
+                    try {
+                        const res = await fetch(`${API_URL}/orders`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${token}`
+                            },
+                            body: JSON.stringify({ 
+                                items: cart, 
+                                totalAmount, 
+                                paymentId: response.razorpay_payment_id 
+                            })
+                        });
 
-                if (res.ok) {
-                    alert("🎉 Order placed successfully!");
-                    cart = [];
-                    updateCartUI();
-                    fetchOrders();
-                } else {
-                    alert("Failed to place order.");
+                        if (res.ok) {
+                            alert("🎉 Payment Successful & Order placed! Payment ID: " + response.razorpay_payment_id);
+                            cart = [];
+                            updateCartUI();
+                            fetchOrders();
+                        } else {
+                            alert("Payment received, but failed to save order on server.");
+                        }
+                    } catch (err) {
+                        console.error("Order save error:", err);
+                        alert("Error connecting to server.");
+                    }
+                },
+                "prefill": {
+                    "name": "Ravi Mehra",
+                    "email": "rk00828431@gmail.com",
+                    "contact": "9999999999"
+                },
+                "theme": {
+                    "color": "#2563eb"
                 }
-            } catch (err) {
-                console.error("Checkout error:", err);
-                alert("Error connecting to server.");
-            }
+            };
+
+            const rzp1 = new Razorpay(options);
+            rzp1.open();
         }
 
         async function fetchOrders() {
@@ -405,6 +432,7 @@
                 orders.forEach(order => {
                     let itemsDetail = order.items.map(i => `${i.name} (x${i.qty})`).join(', ');
                     let dateStr = new Date(order.orderDate).toLocaleDateString() + " " + new Date(order.orderDate).toLocaleTimeString();
+                    let payIdInfo = order.paymentId ? `<br><span style="font-size: 12px; color: #16a34a;">Payment ID: ${order.paymentId}</span>` : "";
                     
                     ordersList.innerHTML += `
                         <div class="order-card">
@@ -414,7 +442,7 @@
                             </div>
                             <p style="font-size: 13px; color: #64748b; margin: 4px 0;">Date: ${dateStr}</p>
                             <p style="font-size: 14px; margin: 8px 0;"><b>Items:</b> ${itemsDetail}</p>
-                            <p style="font-size: 15px; font-weight: bold; color: #2563eb; margin: 0;">Total Paid: ₹${order.totalAmount}</p>
+                            <p style="font-size: 15px; font-weight: bold; color: #2563eb; margin: 0;">Total Paid: ₹${order.totalAmount} ${payIdInfo}</p>
                         </div>
                     `;
                 });
