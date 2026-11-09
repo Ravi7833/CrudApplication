@@ -14,12 +14,9 @@ export const handler = async (event) => {
     const claims = event.requestContext.authorizer?.jwt?.claims || {};
     const userId = claims.sub || "guest";
     
-    // Fallback: Token claims ya Custom Header se email check karna
-    const headers = event.headers || {};
-    const userEmail = claims.email || headers['x-user-email'] || ""; 
-    
-    const ADMIN_EMAIL = "rk00828431@gmail.com"; 
-    const isAdmin = (userEmail === ADMIN_EMAIL);
+    // Aapke Admin account ka unique Cognito Sub ID
+    const ADMIN_SUB = "81739d4a-4001-70f0-1907-d763fb1d24e5"; 
+    const isAdmin = (userId === ADMIN_SUB);
 
     try {
         if (path === "/items") {
@@ -30,7 +27,7 @@ export const handler = async (event) => {
             
             if (method === "POST" || method === "PUT") {
                 if (!isAdmin) {
-                    return { statusCode: 403, body: JSON.stringify({ message: "Access Denied: Admins only!", receivedEmail: userEmail }) };
+                    return { statusCode: 403, body: JSON.stringify({ message: "Access Denied: Admins only!", userId }) };
                 }
                 const body = JSON.parse(event.body);
                 await docClient.send(new PutCommand({ TableName: ITEMS_TABLE, Item: body }));
