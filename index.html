@@ -150,6 +150,8 @@
         const CLIENT_ID = "4iq9tj463o6d8r3g6ceraoqktv";
         const REDIRECT_URI = "https://dkqji71grg3kj.cloudfront.net";
 
+        const ADMIN_SUB = "81739d4a-4001-70f0-1907-d763fb1d24e5";
+
         let allProducts = [];
         let cart = [];
 
@@ -186,10 +188,9 @@
                     const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
                     const jsonPayload = decodeURIComponent(atob(base64).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
                     const payload = JSON.parse(jsonPayload);
-                    const userEmail = payload.email || "";
-                    const groups = payload['cognito:groups'] || [];
+                    const userId = payload.sub || "";
 
-                    const isAdmin = (userEmail === "rk00828431@gmail.com") || groups.includes('Admins');
+                    const isAdmin = (userId === ADMIN_SUB);
 
                     if (isAdmin) {
                         adminPortal.classList.remove('hidden');
@@ -250,4 +251,243 @@
             products.forEach(item => {
                 let imgSrc = item.image || "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=400";
                 let price = item.price || 999;
-                let category = item.
+                let category = item.category || "General";
+                let title = item.name || "Product";
+
+                list.innerHTML += `
+                    <div class="product-card">
+                        <div>
+                            <img src="${imgSrc}" class="product-img" alt="${title}" onerror="this.src='https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=400'">
+                            <span style="font-size: 11px; background: #e2e8f0; padding: 2px 6px; border-radius: 4px; font-weight: bold; color: #475569; display: inline-block; margin-top: 8px;">${category}</span>
+                            <h4 style="margin: 8px 0 4px 0; font-size: 15px;">${title}</h4>
+                            <p style="color: #16a34a; font-weight: bold; margin: 0;">₹${price}</p>
+                        </div>
+                        <div style="margin-top: 12px;">
+                            <button onclick='addToCart("${item.id}", "${title.replace(/'/g, "")}", ${price})' style="width: 100%; padding: 8px; font-size: 13px;">Add to Cart</button>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        function displayAdminTable(products) {
+            const tbody = document.getElementById('adminTableBody');
+            tbody.innerHTML = '';
+            if (products.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #64748b;">No products found in inventory.</td></tr>';
+                return;
+            }
+
+            products.forEach(item => {
+                tbody.innerHTML += `
+                    <tr>
+                        <td><b>${item.id}</b></td>
+                        <td>${item.name}</td>
+                        <td>${item.category || 'General'}</td>
+                        <td>₹${item.price}</td>
+                        <td>
+                            <button onclick='deleteItem("${item.id}")' class="danger" style="padding: 4px 10px; font-size: 12px;">Delete</button>
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+
+        function filterProducts() {
+            const search = document.getElementById('searchInput').value.toLowerCase();
+            const category = document.getElementById('categoryFilter').value;
+
+            const filtered = allProducts.filter(item => {
+                const matchesSearch = (item.name || "").toLowerCase().includes(search);
+                const matchesCategory = (category === "ALL" || item.category === category);
+                return matchesSearch && matchesCategory;
+            });
+            displayProducts(filtered);
+        }
+
+        function addToCart(id, name, price) {
+            const existing = cart.find(p => p.id === id);
+            if (existing) { existing.qty += 1; } 
+            else { cart.push({ id, name, price, qty: 1 }); }
+            updateCartUI();
+        }
+
+        function updateCartUI() {
+            const cartList = document.getElementById('cartItemsList');
+            const cartTotal = document.getElementById('cartTotal');
+            cartList.innerHTML = '';
+
+            if (cart.length === 0) {
+                cartList.innerHTML = '<p style="color: #64748b; font-size: 14px; text-align: center; margin-top: 40px;">Your cart is empty.</p>';
+                cartTotal.innerText = '₹0';
+                return;
+            }
+
+            let total = 0;
+            cart.forEach((item, index) => {
+                total += item.price * item.qty;
+                cartList.innerHTML += `
+                    <div class="cart-item">
+                        <div>
+                            <span style="font-size: 14px; font-weight: 500;">${item.name}</span><br>
+                            <span style="font-size: 12px; color: #64748b;">₹${item.price} × ${item.qty}</span>
+                        </div>
+                        <button onclick="removeFromCart(${index})" class="danger" style="padding: 2px 8px; font-size: 11px;">✕</button>
+                    </div>
+                `;
+            });
+            cartTotal.innerText = `₹${total}`;
+        }
+
+        function removeFromCart(index) {
+            cart.splice(index, 1);
+            updateCartUI();
+        }
+
+        async function checkout() {
+            const token = localStorage.getItem('jwt_token');
+            if (!token) {
+                alert("Please login first to place an order!");
+                loginWithCognito();
+                return;
+            }
+
+            if (cart.length === 0) {
+                alert("Your cart is empty!");
+                return;
+            }
+
+            const totalAmount = cart.reduce((acc, item) => acc + (item.price * item.qty), 0);
+
+            try {
+                const res = await fetch(`${API_URL}/orders`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ items: cart, totalAmount })
+                });
+
+                if (res.ok) {
+                    alert("🎉 Order placed successfully!");
+                    cart = [];
+                    updateCartUI();
+                    fetchOrders();
+                } else {
+                    alert("Failed to place order.");
+                }
+            } catch (err) {
+                console.error("Checkout error:", err);
+                alert("Error connecting to server.");
+            }
+        }
+
+        async function fetchOrders() {
+            const token = localStorage.getItem('jwt_token');
+            if (!token) return;
+
+            try {
+                const res = await fetch(`${API_URL}/orders`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const orders = await res.json();
+                const ordersList = document.getElementById('ordersList');
+                ordersList.innerHTML = '';
+
+                if (!Array.isArray(orders) || orders.length === 0) {
+                    ordersList.innerHTML = '<p style="color: #64748b;">No past orders found.</p>';
+                    return;
+                }
+
+                orders.forEach(order => {
+                    let itemsDetail = order.items.map(i => `${i.name} (x${i.qty})`).join(', ');
+                    let dateStr = new Date(order.orderDate).toLocaleDateString() + " " + new Date(order.orderDate).toLocaleTimeString();
+                    
+                    ordersList.innerHTML += `
+                        <div class="order-card">
+                            <div style="display: flex; justify-content: space-between; font-weight: bold;">
+                                <span>Order ID: ${order.orderId}</span>
+                                <span style="color: #16a34a;">Status: ${order.status}</span>
+                            </div>
+                            <p style="font-size: 13px; color: #64748b; margin: 4px 0;">Date: ${dateStr}</p>
+                            <p style="font-size: 14px; margin: 8px 0;"><b>Items:</b> ${itemsDetail}</p>
+                            <p style="font-size: 15px; font-weight: bold; color: #2563eb; margin: 0;">Total Paid: ₹${order.totalAmount}</p>
+                        </div>
+                    `;
+                });
+            } catch (err) {
+                console.error("Error fetching orders:", err);
+            }
+        }
+
+        function toggleOrdersView() {
+            const ordersSec = document.getElementById('ordersSection');
+            ordersSec.classList.toggle('hidden');
+            if (!ordersSec.classList.contains('hidden')) {
+                fetchOrders();
+            }
+        }
+
+        async function saveItem() {
+            const token = localStorage.getItem('jwt_token');
+            if (!token) { alert("Please login first!"); return; }
+
+            const id = document.getElementById('adminProdId').value;
+            const name = document.getElementById('adminProdName').value;
+            const price = document.getElementById('adminProdPrice').value;
+            const image = document.getElementById('adminProdImage').value;
+            const category = document.getElementById('adminProdCategory').value;
+
+            if (!id || !name || !price) { alert("Please fill ID, Title, and Price!"); return; }
+
+            const res = await fetch(`${API_URL}/items`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ id, name, price: Number(price), image, category })
+            });
+
+            if (res.status === 403) {
+                alert("Access Denied: Only Admins can add products!");
+                return;
+            }
+
+            if (res.ok) {
+                alert("Product published successfully!");
+                document.getElementById('adminProdId').value = '';
+                document.getElementById('adminProdName').value = '';
+                document.getElementById('adminProdPrice').value = '';
+                document.getElementById('adminProdImage').value = '';
+                fetchItems();
+            } else {
+                alert("Failed to publish product.");
+            }
+        }
+
+        async function deleteItem(id) {
+            const token = localStorage.getItem('jwt_token');
+            if (!token) { alert("Please login first!"); return; }
+
+            if (!confirm(`Are you sure you want to delete product ID: ${id}?`)) return;
+
+            const res = await fetch(`${API_URL}/items`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ id })
+            });
+
+            if (res.status === 403) {
+                alert("Access Denied: Only Admins can delete products!");
+                return;
+            }
+
+            if (res.ok) {
+                alert("Product deleted successfully!");
+                fetchItems();
+            } else {
+                alert("Failed to delete product.");
+            }
+        }
+    </script>
+</body>
+</html>
